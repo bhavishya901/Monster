@@ -1,564 +1,300 @@
-/**
- * MONSTER ENERGY — OBJECTIVE 3D EXPERIENCE
- * Modular Three.js + GSAP 3 Architecture
- */
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 
-// ==========================================
-// 1. CAMPAIGN CONFIGURATION OBJECT (MODULAR)
-// ==========================================
+/* ============ CAMPAIGN CONFIG — edit here ============ */
 const campaigns = [
-  {
-    id: "original",
-    name: "Original",
-    tagline: "UNLEASH YOUR TRUE ENERGY",
-    description: "Bold flavor. Maximum energy. Fuel your passion and push beyond limits with every sip.",
-    color: "#a8ff00",
-    rgb: "168, 255, 0",
-    can: "assets/cans/original.png",
-    canBg: "#0d1a00",
-    particleCount: 150,
-    particleSize: 0.12,
-    fogDensity: 0.035,
-    metallic: 0.85,
-    roughness: 0.2
-  },
-  {
-    id: "zero-sugar",
-    name: "Zero Sugar",
-    tagline: "ZERO SUGAR. 100% MONSTER.",
-    description: "Pure electrical performance. Crisp, light citrus kick without a single calorie.",
-    color: "#00e5ff",
-    rgb: "0, 229, 255",
-    can: "assets/cans/zero-sugar.png",
-    canBg: "#001824",
-    particleCount: 180,
-    particleSize: 0.1,
-    fogDensity: 0.04,
-    metallic: 0.9,
-    roughness: 0.15
-  },
-  {
-    id: "ultra",
-    name: "Ultra",
-    tagline: "LIGHTER & REFRESHING",
-    description: "Cold silver atmosphere. Frost-bite finish crafted for intense focus and peak physical agility.",
-    color: "#e0e0e0",
-    rgb: "224, 224, 224",
-    can: "assets/cans/ultra.png",
-    canBg: "#1a1a1a",
-    particleCount: 200,
-    particleSize: 0.08,
-    fogDensity: 0.03,
-    metallic: 0.95,
-    roughness: 0.1
-  },
-  {
-    id: "mango-loco",
-    name: "Mango Loco",
-    tagline: "HEAVENLY TROPICAL BLEND",
-    description: "Explosive juice blend loaded with exotic mango aura and relentless Monster energy.",
-    color: "#ff6b00",
-    rgb: "255, 107, 0",
-    can: "assets/cans/mango-loco.png",
-    canBg: "#240e00",
-    particleCount: 160,
-    particleSize: 0.14,
-    fogDensity: 0.038,
-    metallic: 0.8,
-    roughness: 0.25
-  },
-  {
-    id: "pipeline-punch",
-    name: "Pipeline Punch",
-    tagline: "THE PERFECT STORM",
-    description: "Passion fruit, orange, and guava surge into a vibrant pink swell of unstoppable power.",
-    color: "#ff007a",
-    rgb: "255, 0, 122",
-    can: "assets/cans/pipeline-punch.png",
-    canBg: "#240012",
-    particleCount: 170,
-    particleSize: 0.11,
-    fogDensity: 0.036,
-    metallic: 0.82,
-    roughness: 0.22
-  }
+  { name: "ORIGINAL", color: "#A8FF00", can: "original.png", description: "Bold flavor. Maximum energy." },
+  { name: "ZERO SUGAR", color: "#20A9FF", can: "zero-sugar.png", description: "Crisp energy without sugar.", ice: true },
+  { name: "ULTRA", color: "#F2F5F3", can: "ultra.png", description: "Clean. Cold. Ultra.", ice: true },
+  { name: "MANGO LOCO", color: "#FF7A18", can: "mango-loco.png", description: "Tropical mango intensity." },
+  { name: "PIPELINE PUNCH", color: "#FF4FA3", can: "pipeline-punch.png", description: "Fruit punch energy." }
 ];
+const CAN_DIR = "assets/cans/";
 
-let currentCampaignIndex = 0;
-let isTransitioning = false;
+/* ============ DOM REFERENCES ============ */
+const $ = (s, r = document) => r.querySelector(s);
+const gsap = window.gsap;
+const loader = $("#loader"), stage = $("#stage"), canvas = $("#webgl"), grid = $("#campaignGrid");
+const tag = $("#campaignTag"), desc = $("#campaignDescription"), num = $("#campaignNumber");
+const toast = $("#toast"), fallbackImg = $("#productImage");
+const isTouch = matchMedia("(hover:none)").matches;
+const isMobile = innerWidth < 800 || isTouch;
+const root = document.documentElement;
 
-// ==========================================
-// 2. THREE.JS SCENE SETUP
-// ==========================================
-let scene, camera, renderer;
-let productGroup, canMesh, particleSystem, particleGeo, particleMat;
-let keyLight, rimLight, pointLight, ambientLight;
-let mouseX = 0, mouseY = 0;
-let targetX = 0, targetY = 0;
+/* ============ CAMPAIGN SYSTEM (UI) ============ */
+campaigns.forEach((c, i) => {
+  const b = document.createElement("button");
+  b.className = "card"; b.style.setProperty("--cc", c.color);
+  b.setAttribute("aria-label", `Select ${c.name}`);
+  b.innerHTML = `<span class="n">0${i + 1}</span><span class="thumb"><img alt="${c.name} can" src="${CAN_DIR + c.can}"></span><b>${c.name}</b><small>${c.description}</small><i>↗</i>`;
+  $("img", b).onerror = (e) => e.target.replaceWith(Object.assign(document.createElement("span"), { className: "mini-can" }));
+  b.onclick = () => select(i);
+  grid.append(b);
+});
+const cards = [...grid.children];
+let current = 0, busy = false;
+const env = { color: new THREE.Color(campaigns[0].color) }; // single shared colour, tweened by GSAP
+root.style.setProperty("--c", campaigns[0].color);
 
-function init3D() {
-  const container = document.getElementById('stage');
-  const canvas = document.getElementById('webgl');
+function showToast(msg) {
+  toast.innerHTML = msg; toast.classList.add("show");
+  setTimeout(() => toast.classList.remove("show"), 4200);
+}
+function setText(i) {
+  const c = campaigns[i];
+  tag.textContent = c.name; desc.textContent = c.description; num.textContent = "0" + (i + 1);
+  cards.forEach((k, n) => k.classList.toggle("on", n === i));
+  root.style.setProperty("--c", c.color);
+  fallbackImg.alt = `Monster ${c.name} energy drink can`;
+}
 
-  // Scene
+/* ============ THREE.JS INITIALIZATION ============ */
+let renderer, scene, camera, product, slots = [], baseZ = 8.6;
+const rig = { z: 8.6 }, fx = { light: 1, liquid: 1, ice: 0, p: 1 };
+const mouse = { x: 0, y: 0 }, look = { x: 0, y: 0 };
+let webgl = true;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: !isMobile, alpha: true, powerPreference: "high-performance" });
+} catch (e) { webgl = false; document.body.classList.add("no-webgl"); }
+
+const texLoader = new THREE.TextureLoader();
+const loadTex = (url) => new Promise((res) => texLoader.load(url, (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
+const dot = (inner, outer) => { const k = document.createElement("canvas"); k.width = k.height = 64; const x = k.getContext("2d"); const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, inner); g.addColorStop(1, outer); x.fillStyle = g; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(k); };
+const tint = (obj, k = 1) => obj.color.copy(env.color).multiplyScalar(k);
+
+let rim, point, accent, key, rings = [], liquid, ice, shadow, layers = [];
+
+if (webgl) {
+  renderer.setClearColor(0x000000, 0);
   scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x050505, campaigns[0].fogDensity);
+  scene.fog = new THREE.FogExp2(0x050505, 0.035);
+  camera = new THREE.PerspectiveCamera(32, 1, 0.1, 60);
+  product = new THREE.Group(); scene.add(product);
 
-  // Camera
-  camera = new THREE.PerspectiveCamera(
-    45,
-    container.clientWidth / container.clientHeight,
-    0.1,
-    100
-  );
-  camera.position.set(0, 0, 7.5);
+  // Studio reflection map (soft-boxes) so the metal reads as metal
+  const ec = document.createElement("canvas"); ec.width = 512; ec.height = 256;
+  const ex = ec.getContext("2d"), eg = ex.createLinearGradient(0, 0, 0, 256);
+  eg.addColorStop(0, "#2a2a2a"); eg.addColorStop(.5, "#060606"); eg.addColorStop(1, "#151515");
+  ex.fillStyle = eg; ex.fillRect(0, 0, 512, 256); ex.fillStyle = "#fff";
+  [[50, 60, 40, 130], [250, 50, 18, 140], [390, 80, 64, 100]].forEach((r) => ex.fillRect(...r));
+  const et = new THREE.CanvasTexture(ec); et.mapping = THREE.EquirectangularReflectionMapping;
+  const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromEquirectangular(et).texture; pm.dispose();
 
-  // Renderer
-  renderer = new THREE.WebGLRenderer({
-    canvas: canvas,
-    antialias: true,
-    alpha: true,
-    powerPreference: "high-performance"
-  });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(container.clientWidth, container.clientHeight);
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  /* ============ LIGHTING ============ */
+  scene.add(new THREE.AmbientLight(0x404050, 0.35));
+  key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(-3, 4, 5); scene.add(key);
+  rim = new THREE.DirectionalLight(0xffffff, 3); rim.position.set(4, 2, -3); scene.add(rim);
+  point = new THREE.PointLight(0xffffff, 30, 14); point.position.set(0, .2, -2.6); scene.add(point);
+  accent = new THREE.PointLight(0xffffff, 12, 12); accent.position.set(-3, -1.2, 2); scene.add(accent);
 
-  // Lighting
-  ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-  scene.add(ambientLight);
-
-  keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
-  keyLight.position.set(4, 5, 5);
-  keyLight.castShadow = true;
-  scene.add(keyLight);
-
-  rimLight = new THREE.DirectionalLight(new THREE.Color(campaigns[0].color), 3.5);
-  rimLight.position.set(-5, 4, -4);
-  scene.add(rimLight);
-
-  pointLight = new THREE.PointLight(new THREE.Color(campaigns[0].color), 2.5, 10);
-  pointLight.position.set(0, -1, 2);
-  scene.add(pointLight);
-
-  // Product Group
-  productGroup = new THREE.Group();
-  scene.add(productGroup);
-
-  // Construct initial 3D Monster Can
-  createCanMesh(campaigns[0]);
-
-  // Particles & Ice Atmosphere
-  createParticles(campaigns[0]);
-
-  // Events
-  window.addEventListener('resize', onWindowResize);
-  container.addEventListener('mousemove', onMouseMove);
-  
-  // Touch support
-  container.addEventListener('touchmove', (e) => {
-    if (e.touches.length > 0) {
-      const touch = e.touches[0];
-      const rect = container.getBoundingClientRect();
-      mouseX = ((touch.clientX - rect.left) / container.clientWidth) * 2 - 1;
-      mouseY = -((touch.clientY - rect.top) / container.clientHeight) * 2 + 1;
-    }
+  /* ============ PARTICLES (BufferGeometry / Points, two size layers) ============ */
+  const sprite = dot("rgba(255,255,255,1)", "rgba(255,255,255,0)");
+  [[isMobile ? 110 : 280, .06], [isMobile ? 40 : 90, .13]].forEach(([n, size]) => {
+    const pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { pos[i * 3] = (Math.random() - .5) * 15; pos[i * 3 + 1] = (Math.random() - .5) * 9; pos[i * 3 + 2] = -5 + Math.random() * 7; }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const p = new THREE.Points(g, new THREE.PointsMaterial({ size, map: sprite, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: .8 }));
+    p.userData.size = size; scene.add(p); layers.push(p);
   });
 
-  // Render loop
-  animate();
-}
+  /* ============ RINGS ============ */
+  rings = [[1.9, .012, .55, .25], [2.5, .008, .38, -.18], [3.2, .006, .22, .1]].map(([r, t, o, s], i) => {
+    const m = new THREE.Mesh(new THREE.TorusGeometry(r, t, 8, isMobile ? 64 : 140), new THREE.MeshBasicMaterial({ transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    m.position.z = -1.4 - i * .6; m.rotation.x = 1 + i * .3; m.userData = { s, o }; scene.add(m); return m;
+  });
 
-// ==========================================
-// 3. PROCEDURAL & PNG CAN MESH CREATOR
-// ==========================================
-function generateCanTexture(campaign) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 1024;
-  const ctx = canvas.getContext('2d');
+  /* ============ LIQUID-ENERGY SHADER BACKDROP ============ */
+  liquid = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+    uniforms: { t: { value: 0 }, c: { value: env.color }, k: { value: 1 } },
+    vertexShader: "varying vec2 v;void main(){v=uv-.5;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}",
+    fragmentShader: `varying vec2 v;uniform float t,k;uniform vec3 c;void main(){float r=length(v),a=atan(v.y,v.x);
+      float w=.27+.035*sin(a*5.+t)+.02*sin(a*9.-t*1.7)+.015*sin(a*14.+t*2.3);
+      float e=smoothstep(.035,0.,abs(r-w));float g=exp(-r*5.5)*.5;
+      float d=smoothstep(.02,0.,abs(r-w-.05-.03*sin(a*7.-t*2.)))*.5*step(.6,sin(a*11.+t));
+      gl_FragColor=vec4(c*(e*1.2+g+d)*k,1.);}`
+  }));
+  liquid.position.z = -2.4; scene.add(liquid);
 
-  // Background gradient
-  const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
-  grad.addColorStop(0, '#111111');
-  grad.addColorStop(0.3, campaign.canBg);
-  grad.addColorStop(0.7, '#080808');
-  grad.addColorStop(1, '#1a1a1a');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Metallic brushed texture lines
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
-  for (let i = 0; i < canvas.height; i += 4) {
-    ctx.fillRect(0, i, canvas.width, 1);
+  /* ============ ICE (Zero Sugar / Ultra) ============ */
+  ice = new THREE.Group();
+  const iceMat = new THREE.MeshStandardMaterial({ color: 0xcfefff, metalness: .1, roughness: .05, transparent: true, opacity: 0 });
+  const iceGeo = new THREE.OctahedronGeometry(1, 0);
+  for (let i = 0; i < (isMobile ? 8 : 16); i++) {
+    const m = new THREE.Mesh(iceGeo, iceMat), a = Math.random() * 6.28, r = 1.6 + Math.random() * 1.8;
+    m.position.set(Math.cos(a) * r, (Math.random() - .5) * 3.4, Math.sin(a) * r * .5 - .5);
+    m.scale.setScalar(.04 + Math.random() * .09); m.userData.s = (Math.random() - .5) * 1.4; ice.add(m);
   }
+  ice.userData.mat = iceMat; scene.add(ice);
 
-  // Neon stripes
-  ctx.strokeStyle = campaign.color;
-  ctx.lineWidth = 12;
-  ctx.shadowColor = campaign.color;
-  ctx.shadowBlur = 20;
-
-  ctx.beginPath();
-  ctx.moveTo(100, 0);
-  ctx.lineTo(300, canvas.height);
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(700, 0);
-  ctx.lineTo(900, canvas.height);
-  ctx.stroke();
-
-  // Draw Iconic Monster Claw Marks (Claw Logo)
-  ctx.shadowBlur = 30;
-  ctx.fillStyle = campaign.color;
-  
-  // Slash 1
-  ctx.beginPath();
-  ctx.moveTo(460, 320);
-  ctx.lineTo(485, 280);
-  ctx.lineTo(510, 520);
-  ctx.lineTo(475, 550);
-  ctx.closePath();
-  ctx.fill();
-
-  // Slash 2
-  ctx.beginPath();
-  ctx.moveTo(520, 260);
-  ctx.lineTo(550, 220);
-  ctx.lineTo(570, 580);
-  ctx.lineTo(535, 600);
-  ctx.closePath();
-  ctx.fill();
-
-  // Slash 3
-  ctx.beginPath();
-  ctx.moveTo(580, 300);
-  ctx.lineTo(605, 270);
-  ctx.lineTo(625, 510);
-  ctx.lineTo(595, 530);
-  ctx.closePath();
-  ctx.fill();
-
-  // Typography Label
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#ffffff';
-  ctx.font = '900 64px "Barlow Condensed", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('MONSTER', 530, 680);
-
-  ctx.fillStyle = campaign.color;
-  ctx.font = '700 32px "Barlow Condensed", sans-serif';
-  ctx.fillText(campaign.name.toUpperCase(), 530, 720);
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-  ctx.font = '500 20px "Inter", sans-serif';
-  ctx.fillText('ENERGY DRINK - 16 FL OZ', 530, 760);
-
-  return new THREE.CanvasTexture(canvas);
+  /* ============ SOFT SHADOW ============ */
+  shadow = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 3.4), new THREE.MeshBasicMaterial({ map: dot("rgba(0,0,0,.9)", "rgba(0,0,0,0)"), transparent: true, depthWrite: false, fog: false }));
+  shadow.rotation.x = -Math.PI / 2; shadow.position.y = -1.95; scene.add(shadow);
 }
 
-function createCanMesh(campaign) {
-  if (canMesh) productGroup.remove(canMesh);
-
-  const canWrapper = new THREE.Group();
-
-  // Cylinder Geometry for Can Body
-  const geometry = new THREE.CylinderGeometry(1.05, 1.05, 3.8, 64);
-  const texture = generateCanTexture(campaign);
-  texture.wrapS = THREE.RepeatWrapping;
-
-  const material = new THREE.MeshStandardMaterial({
-    map: texture,
-    metalness: campaign.metallic,
-    roughness: campaign.roughness,
-    envMapIntensity: 1.5
-  });
-
-  const body = new THREE.Mesh(geometry, material);
-  body.castShadow = true;
-  body.receiveShadow = true;
-  canWrapper.add(body);
-
-  // Top metallic rim & cap
-  const capGeo = new THREE.CylinderGeometry(1.06, 1.0, 0.2, 64);
-  const capMat = new THREE.MeshStandardMaterial({
-    color: 0xcccccc,
-    metalness: 0.95,
-    roughness: 0.1
-  });
-  const topCap = new THREE.Mesh(capGeo, capMat);
-  topCap.position.y = 1.95;
-  canWrapper.add(topCap);
-
-  // Bottom metallic rim
-  const botGeo = new THREE.CylinderGeometry(0.95, 1.05, 0.2, 64);
-  const botCap = new THREE.Mesh(botGeo, botMat = capMat);
-  botCap.position.y = -1.95;
-  canWrapper.add(botCap);
-
-  canMesh = canWrapper;
-  canMesh.rotation.y = Math.PI * 0.2;
-  productGroup.add(canMesh);
-}
-
-// ==========================================
-// 4. ATMOSPHERIC PARTICLES
-// ==========================================
-function createParticles(campaign) {
-  if (particleSystem) scene.remove(particleSystem);
-
-  const count = campaign.particleCount;
-  particleGeo = new THREE.BufferGeometry();
-  const positions = new Float32Array(count * 3);
-  const scales = new Float32Array(count);
-
-  for (let i = 0; i < count; i++) {
-    positions[i * 3] = (Math.random() - 0.5) * 12;
-    positions[i * 3 + 1] = (Math.random() - 0.5) * 12;
-    positions[i * 3 + 2] = (Math.random() - 0.5) * 12;
-    scales[i] = Math.random();
+/* ============ PRODUCT (image render or procedural fallback) ============ */
+function labelTexture(c) {
+  const k = document.createElement("canvas"); k.width = k.height = 1024; const x = k.getContext("2d");
+  for (let s = 0; s < 2; s++) { // tile twice so the label wraps the whole can
+    x.save(); x.translate(s * 512, 0);
+    const g = x.createLinearGradient(0, 0, 512, 0); g.addColorStop(0, "#040404"); g.addColorStop(.5, "#181818"); g.addColorStop(1, "#040404");
+    x.fillStyle = g; x.fillRect(0, 0, 512, 1024); x.fillStyle = c.color;
+    for (let i = 0; i < 3; i++) { const o = 150 + i * 72; x.beginPath(); x.moveTo(o, 230); x.lineTo(o + 46, 230); x.lineTo(o + 96, 760); x.lineTo(o + 46, 760); x.fill(); }
+    x.fillRect(0, 120, 512, 10); x.fillRect(0, 900, 512, 10);
+    x.fillStyle = "#fff"; x.textAlign = "center";
+    x.font = "900 120px 'Barlow Condensed',Impact,sans-serif"; x.fillText("MONSTER", 256, 860);
+    x.font = "700 52px 'Barlow Condensed',Impact,sans-serif"; x.fillStyle = c.color; x.fillText(c.name, 256, 985);
+    x.restore();
   }
-
-  particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  particleGeo.setAttribute('scale', new THREE.BufferAttribute(scales, 1));
-
-  particleMat = new THREE.PointsMaterial({
-    color: new THREE.Color(campaign.color),
-    size: campaign.particleSize,
-    transparent: true,
-    opacity: 0.8,
-    blending: THREE.AdditiveBlending
-  });
-
-  particleSystem = new THREE.Points(particleGeo, particleMat);
-  scene.add(particleSystem);
+  const t = new THREE.CanvasTexture(k); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+function buildCan(c, tex) {
+  const g = new THREE.Group();
+  if (tex) { // user-supplied transparent render → lit-looking billboard plane
+    const h = 3.5, w = h * (tex.image.width / tex.image.height);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false, depthWrite: false }));
+    g.add(m); return { g, spin: false, x: 0, z: 0, s: 1, off: 0 };
+  }
+  const seg = isMobile ? 32 : 56, inner = new THREE.Group();
+  inner.add(new THREE.Mesh(new THREE.CylinderGeometry(.62, .62, 2.2, seg, 1, true), new THREE.MeshStandardMaterial({ map: labelTexture(c), metalness: .75, roughness: .28 })));
+  const metal = new THREE.MeshStandardMaterial({ color: 0xbdbdbd, metalness: 1, roughness: .22 });
+  const prof = [[.62, 1.1], [.6, 1.2], [.5, 1.3], [.46, 1.32], [.46, 1.37], [.38, 1.37], [.38, 1.32], [0, 1.32]];
+  const lathe = (sign) => new THREE.Mesh(new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y * sign)), seg), metal);
+  inner.add(lathe(1), lathe(-1)); inner.scale.setScalar(1.25); g.add(inner);
+  return { g, spin: true, x: 0, z: 0, s: 1, off: 0 };
 }
 
-// ==========================================
-// 5. ANIMATION & PARALLAX LOOP
-// ==========================================
-function onMouseMove(event) {
-  const rect = event.currentTarget.getBoundingClientRect();
-  mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-}
-
-function animate() {
-  requestAnimationFrame(animate);
-
-  targetX += (mouseX - targetX) * 0.05;
-  targetY += (mouseY - targetY) * 0.05;
-
-  if (canMesh && !isTransitioning) {
-    canMesh.rotation.y += 0.006;
-    canMesh.rotation.x = targetY * 0.25;
-    canMesh.position.y = Math.sin(Date.now() * 0.0018) * 0.15;
-    canMesh.position.x = targetX * 0.3;
+/* ============ PRODUCT ANIMATION (render loop) ============ */
+let raf = 0, last = 0, T = 0, onScreen = true, active = null;
+function frame(now) {
+  raf = requestAnimationFrame(frame);
+  const dt = Math.min(.05, (now - last) / 1000); last = now; T += dt;
+  look.x += (mouse.x - look.x) * .05; look.y += (mouse.y - look.y) * .05; // lerp parallax
+  camera.position.set(look.x * .8, look.y * .45, rig.z); camera.lookAt(0, 0, 0);
+  product.position.y = Math.sin(T * 1.2) * .09 - .05;
+  product.rotation.x = -look.y * .16; product.rotation.z = look.x * .05;
+  for (const s of slots) if (s && s.g.parent) {
+    s.g.position.set(s.x, 0, s.z); s.g.scale.setScalar(s.s);
+    s.g.rotation.y = s.off + (s.spin ? T * .38 : Math.sin(T * .45) * .3 + look.x * .25);
   }
-
-  if (particleSystem) {
-    particleSystem.rotation.y += 0.001;
-    particleSystem.rotation.x = targetY * 0.1;
-  }
-
-  // Camera parallax
-  camera.position.x = targetX * 0.5;
-  camera.position.y = targetY * 0.5;
-  camera.lookAt(0, 0, 0);
-
+  const sh = 1 - product.position.y * 1.2; shadow.scale.set(sh, sh, sh); shadow.material.opacity = .75 * sh;
+  tint(rim, 1); rim.intensity = 3.2 * fx.light; tint(point, 1); point.intensity = 30 * fx.light; tint(accent, .8); accent.intensity = 12 * fx.light;
+  scene.fog.color.copy(env.color).multiplyScalar(.1);
+  rings.forEach((r, i) => { r.rotation.z += r.userData.s * dt; r.rotation.y += r.userData.s * .4 * dt; r.material.color.copy(env.color); r.material.opacity = r.userData.o * fx.light * (1 + .15 * Math.sin(T + i)); });
+  liquid.material.uniforms.t.value = T; liquid.material.uniforms.k.value = fx.liquid;
+  layers.forEach((p, i) => { p.material.color.copy(env.color); p.material.opacity = .8 * fx.p; p.rotation.y = T * .02 * (i + 1) + look.x * .08; p.position.y = Math.sin(T * .3 + i) * .15 - look.y * .2; });
+  ice.userData.mat.opacity = .6 * fx.ice; if (fx.ice > .01) ice.children.forEach((m) => { m.rotation.x += m.userData.s * dt; m.rotation.y += m.userData.s * dt; });
+  ice.rotation.y = T * .06;
   renderer.render(scene, camera);
 }
 
-function onWindowResize() {
-  const container = document.getElementById('stage');
-  if (!container) return;
-  camera.aspect = container.clientWidth / container.clientHeight;
+/* ============ CAMPAIGN TRANSITION ============ */
+function swapText(i) {
+  gsap.timeline().to([tag, desc, num], { y: -14, opacity: 0, duration: .3, ease: "power2.in" })
+    .add(() => setText(i)).fromTo([tag, desc, num], { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: .6, stagger: .06, ease: "expo.out" });
+}
+function select(i) {
+  if (i === current || busy) return;
+  const c = campaigns[i], dir = i > current ? 1 : -1; busy = true;
+  if (!webgl) { // CSS fallback path: still a staged transition
+    gsap.to(fallbackImg, { opacity: 0, scale: .9, duration: .3, onComplete: () => { fallbackImg.src = CAN_DIR + c.can; gsap.to(fallbackImg, { opacity: 1, scale: 1, duration: .7, ease: "expo.out" }); busy = false; } });
+    swapText(i); current = i; return;
+  }
+  const out = active, inc = slots[i], tl = gsap.timeline({ onComplete: () => { busy = false; } });
+  swapText(i);
+  tl.to(out, { off: out.off + .9, z: -3.2, s: .55, x: -2.4 * dir, duration: .8, ease: "power3.inOut" }, 0)   // rotate, move back, scale down
+    .to(fx, { light: .1, liquid: .1, p: .15, duration: .6, ease: "power2.inOut" }, 0)                       // lights, liquid, particles fade
+    .to(rig, { z: baseZ - 1, duration: .8, ease: "power3.inOut" }, 0)
+    .addLabel("swap", .6)
+    .add(() => { product.remove(out.g); Object.assign(inc, { x: 2.8 * dir, z: -3.2, s: .55, off: -1.4 }); product.add(inc.g); active = inc; current = i; }, "swap")
+    .to(env.color, { r: new THREE.Color(c.color).r, g: new THREE.Color(c.color).g, b: new THREE.Color(c.color).b, duration: 1.1, ease: "power2.inOut" }, "swap-=.4") // bg/fog/lights/rings colour morph
+    .to(fx, { ice: c.ice ? 1 : 0, duration: 1, ease: "power2.inOut" }, "swap")
+    .to(inc, { x: 0, z: 0, off: 0, duration: 1.1, ease: "expo.out" }, "swap+=.02")
+    .to(inc, { s: 1, duration: 1.2, ease: "elastic.out(1,.65)" }, "swap+=.02")
+    .to(fx, { light: 1, liquid: 1, p: 1, duration: 1, ease: "power2.out" }, "swap+=.15")
+    .to(rig, { z: baseZ, duration: 1.1, ease: "expo.out" }, "swap");
+}
+function intro() { // used on load and by REPLAY
+  const s = active; if (!s) return;
+  Object.assign(s, { z: -4, s: .4, off: -2.2 });
+  gsap.to(s, { z: 0, s: 1, off: 0, duration: 1.8, ease: "expo.out" });
+  gsap.fromTo(rig, { z: baseZ + 1.6 }, { z: baseZ, duration: 2.2, ease: "expo.out" });
+}
+
+/* ============ MOUSE INTERACTION ============ */
+addEventListener("pointermove", (e) => { mouse.x = (e.clientX / innerWidth - .5) * 2; mouse.y = -(e.clientY / innerHeight - .5) * 2; }, { passive: true });
+addEventListener("deviceorientation", (e) => { if (e.gamma != null) { mouse.x = Math.max(-1, Math.min(1, e.gamma / 30)); mouse.y = Math.max(-1, Math.min(1, (e.beta - 45) / -40)); } }, { passive: true });
+
+/* ============ RESPONSIVE SYSTEM ============ */
+function resize() {
+  if (!webgl) return;
+  const { width: w, height: h } = stage.getBoundingClientRect(); if (!w || !h) return;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, isMobile ? 1.25 : 1.5));
+  renderer.setSize(w, h, false); camera.aspect = w / h;
+  baseZ = camera.aspect < .9 ? 11 : camera.aspect < 1.4 ? 9.6 : 8.6; rig.z = baseZ;
   camera.updateProjectionMatrix();
-  renderer.setSize(container.clientWidth, container.clientHeight);
 }
 
-// ==========================================
-// 6. CINEMATIC CAMPAIGN TRANSITION (GSAP 3)
-// ==========================================
-function switchCampaign(index) {
-  if (index === currentCampaignIndex || isTransitioning) return;
-  isTransitioning = true;
-
-  const prevCampaign = campaigns[currentCampaignIndex];
-  currentCampaignIndex = index;
-  const nextCampaign = campaigns[currentCampaignIndex];
-
-  // Update UI Active states
-  document.querySelectorAll('.campaign-card').forEach((card, idx) => {
-    card.classList.toggle('active', idx === index);
-  });
-
-  // GSAP Timeline
-  const tl = gsap.timeline({
-    onComplete: () => {
-      isTransitioning = false;
-    }
-  });
-
-  // Step 1: Animate Current Can Out
-  tl.to(canMesh.position, {
-    z: -4,
-    y: -2,
-    duration: 0.6,
-    ease: "power3.in"
-  })
-  .to(canMesh.rotation, {
-    y: canMesh.rotation.y + Math.PI * 1.5,
-    duration: 0.6,
-    ease: "power3.in"
-  }, 0)
-  .to([keyLight, pointLight], {
-    intensity: 0.1,
-    duration: 0.4
-  }, 0);
-
-  // Step 2: Swap Environment & Recalculate
-  tl.add(() => {
-    // Swap 3D Can texture/mesh
-    createCanMesh(nextCampaign);
-    createParticles(nextCampaign);
-
-    // Update lights
-    rimLight.color.set(nextCampaign.color);
-    pointLight.color.set(nextCampaign.color);
-    scene.fog.color.set(0x050505);
-    scene.fog.density = nextCampaign.fogDensity;
-
-    // Update CSS Variables & DOM Text
-    document.documentElement.style.setProperty('--accent-color', nextCampaign.color);
-    document.documentElement.style.setProperty('--accent-rgb', nextCampaign.rgb);
-
-    document.getElementById('campaignTag').textContent = nextCampaign.name.toUpperCase();
-    document.getElementById('campaignTagline').textContent = nextCampaign.tagline;
-    document.getElementById('campaignDescription').textContent = nextCampaign.description;
-    document.getElementById('campaignNumber').textContent = `0${nextCampaign + 1}`;
-
-    // Reset position off-screen
-    canMesh.position.set(0, 3, -4);
-    canMesh.rotation.y = 0;
-  });
-
-  // Step 3: Animate New Can In
-  tl.to(canMesh.position, {
-    x: 0,
-    y: 0,
-    z: 0,
-    duration: 0.9,
-    ease: "elastic.out(1, 0.75)"
-  })
-  .to(canMesh.rotation, {
-    y: Math.PI * 0.2,
-    duration: 0.9,
-    ease: "power3.out"
-  }, "-=0.9")
-  .to(keyLight, { intensity: 2.0, duration: 0.5 }, "-=0.7")
-  .to(pointLight, { intensity: 2.5, duration: 0.5 }, "-=0.7");
-
-  // Step 4: Animate Typography Slide-In
-  tl.fromTo("#heroTitle, #campaignDescription, .actions", 
-    { opacity: 0, y: 20 },
-    { opacity: 1, y: 0, duration: 0.5, stagger: 0.08, ease: "power2.out" },
-    "-=0.6"
-  );
-
-  showToast(`ACTIVATED ${nextCampaign.name.toUpperCase()} ATMOSPHERE`);
+/* ============ PERFORMANCE SYSTEM ============ */
+function sync() {
+  if (!webgl) return;
+  const run = onScreen && !document.hidden;
+  if (run && !raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  else if (!run && raf) { cancelAnimationFrame(raf); raf = 0; }
 }
 
-// ==========================================
-// 7. CARDS & UI INITIALIZATION
-// ==========================================
-function renderCampaignCards() {
-  const grid = document.getElementById('campaignGrid');
-  grid.innerHTML = '';
-
-  campaigns.forEach((camp, idx) => {
-    const card = document.createElement('div');
-    card.className = `campaign-card ${idx === 0 ? 'active' : ''}`;
-    card.style.setProperty('--card-color', camp.color);
-    card.style.setProperty('--card-rgb', camp.rgb);
-
-    card.innerHTML = `
-      <span class="card-num">0${idx + 1}</span>
-      <div class="card-preview" id="cardPreview_${idx}"></div>
-      <h3>${camp.name}</h3>
-      <span>EXPLORE ATMOSPHERE →</span>
-    `;
-
-    card.addEventListener('click', () => switchCampaign(idx));
-    grid.appendChild(card);
-
-    // Render static thumbnail canvas inside card
-    setTimeout(() => {
-      const thumbCanvas = generateCardThumbnail(camp);
-      const container = document.getElementById(`cardPreview_${idx}`);
-      if (container) container.appendChild(thumbCanvas);
-    }, 50);
+/* ============ GSAP ANIMATIONS / UX ============ */
+function initUX() {
+  if (!isTouch) { // custom cursor
+    document.body.classList.add("has-cursor");
+    const ring = $(".cursor"), dotEl = $(".cursor-dot"); gsap.set([ring, dotEl], { xPercent: -50, yPercent: -50 });
+    const rx = gsap.quickTo(ring, "x", { duration: .4, ease: "power3" }), ry = gsap.quickTo(ring, "y", { duration: .4, ease: "power3" });
+    const dx = gsap.quickTo(dotEl, "x", { duration: .08 }), dy = gsap.quickTo(dotEl, "y", { duration: .08 });
+    addEventListener("pointermove", (e) => { rx(e.clientX); ry(e.clientY); dx(e.clientX); dy(e.clientY); }, { passive: true });
+    document.addEventListener("pointerover", (e) => ring.classList.toggle("hot", !!e.target.closest("a,button")));
+  }
+  document.querySelectorAll(".magnetic").forEach((el) => { // magnetic buttons
+    if (isTouch) return;
+    el.addEventListener("pointermove", (e) => { const r = el.getBoundingClientRect(); gsap.to(el, { x: (e.clientX - r.left - r.width / 2) * .3, y: (e.clientY - r.top - r.height / 2) * .3, scale: 1.05, duration: .4, ease: "power3.out" }); });
+    el.addEventListener("pointerleave", () => gsap.to(el, { x: 0, y: 0, scale: 1, duration: .8, ease: "elastic.out(1,.4)" }));
   });
+  const bar = $(".topbar"); addEventListener("scroll", () => bar.classList.toggle("scrolled", scrollY > 40), { passive: true });
+  const mb = $(".menu-btn"); mb.onclick = () => { const o = document.body.classList.toggle("menu-open"); mb.setAttribute("aria-expanded", o); };
+  document.querySelectorAll("nav a").forEach((a) => a.addEventListener("click", () => document.body.classList.remove("menu-open")));
+  $("#replayBtn").onclick = () => { if (webgl) intro(); gsap.from([".hero h1 span", ".hero h1 em"], { yPercent: 40, opacity: 0, stagger: .1, duration: 1, ease: "expo.out" }); };
+  $("#videoBtn").onclick = () => { // optional reel, never required
+    const card = $(".video-card"); if ($("video", card)) return;
+    const v = Object.assign(document.createElement("video"), { src: "assets/videos/energy-reel.mp4", controls: true, playsInline: true });
+    v.onerror = () => { v.remove(); showToast("ADD YOUR REEL AT <b>assets/videos/energy-reel.mp4</b>"); };
+    v.oncanplay = () => { card.classList.add("playing"); v.play(); };
+    card.append(v);
+  };
+  if (window.ScrollTrigger) {
+    gsap.registerPlugin(ScrollTrigger);
+    gsap.utils.toArray(".section-head, .campaign-grid, .statement h2, .video-card, .gallery-copy").forEach((el) => gsap.from(el, { y: 50, opacity: 0, duration: 1, ease: "power3.out", scrollTrigger: { trigger: el, start: "top 88%" } }));
+    gsap.to(".statement-number", { yPercent: -35, ease: "none", scrollTrigger: { trigger: ".statement", scrub: true } });
+  }
+  gsap.from([".hero-copy > *", ".feature-panel > *"], { y: 36, opacity: 0, stagger: .07, duration: 1.2, ease: "expo.out", delay: .3 });
 }
 
-function generateCardThumbnail(camp) {
-  const tex = generateCanTexture(camp);
-  const canvas = tex.image;
-  canvas.style.maxWidth = "100%";
-  canvas.style.maxHeight = "140px";
-  return canvas;
+/* ============ BOOT ============ */
+async function boot() {
+  setText(0);
+  const t0 = performance.now(); let missing = 0;
+  if (webgl) {
+    try { await document.fonts.ready; } catch (e) {}
+    const textures = await Promise.all(campaigns.map((c) => loadTex(CAN_DIR + c.can)));
+    textures.forEach((t, i) => { if (!t) missing++; slots[i] = buildCan(campaigns[i], t); });
+    active = slots[0]; product.add(active.g); resize();
+    new ResizeObserver(resize).observe(stage);
+    new IntersectionObserver(([e]) => { onScreen = e.isIntersecting; sync(); }).observe(stage);
+    document.addEventListener("visibilitychange", sync);
+    addEventListener("pagehide", () => { renderer.dispose(); });
+    sync();
+  } else {
+    fallbackImg.onerror = () => { fallbackImg.style.display = "none"; };
+  }
+  await new Promise((r) => setTimeout(r, Math.max(0, 1100 - (performance.now() - t0))));
+  loader.classList.add("done"); initUX(); if (webgl) intro();
+  if (missing) setTimeout(() => showToast(`USING PROCEDURAL CANS — ADD PNGs TO <b>${CAN_DIR}</b>`), 2200);
 }
-
-function showToast(msg) {
-  const toast = document.getElementById('toast');
-  toast.textContent = msg;
-  toast.classList.add('show');
-  setTimeout(() => toast.classList.remove('show'), 3000);
-}
-
-function initUI() {
-  // Hide loader
-  setTimeout(() => {
-    document.getElementById('loader').classList.add('hidden');
-  }, 800);
-
-  // Custom Cursor
-  const cursor = document.getElementById('cursorFollower');
-  window.addEventListener('mousemove', (e) => {
-    cursor.style.left = `${e.clientX}px`;
-    cursor.style.top = `${e.clientY}px`;
-  });
-
-  // Replay animation button
-  document.getElementById('replayBtn').addEventListener('click', () => {
-    gsap.fromTo(canMesh.rotation, 
-      { y: canMesh.rotation.y },
-      { y: canMesh.rotation.y + Math.PI * 2, duration: 1.2, ease: "expo.inOut" }
-    );
-  });
-
-  // Video Reel button
-  document.getElementById('videoBtn').addEventListener('click', () => {
-    showToast("CINEMATIC REEL LOADING...");
-  });
-
-  // Cart Counter increment
-  document.querySelectorAll('.shop-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const cart = document.getElementById('cartCount');
-      cart.textContent = parseInt(cart.textContent) + 1;
-      showToast("ADDED TO CART");
-    });
-  });
-}
-
-// ==========================================
-// 8. BOOTSTRAP
-// ==========================================
-window.addEventListener('DOMContentLoaded', () => {
-  renderCampaignCards();
-  init3D();
-  initUI();
-});
+boot().catch((e) => { console.error(e); loader.classList.add("done"); });
