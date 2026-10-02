@@ -2,11 +2,11 @@ import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
 /* ============ CAMPAIGN CONFIG — edit here ============ */
 const campaigns = [
-  { name: "ORIGINAL", color: "#A8FF00", can: "original.png", description: "Bold flavor. Maximum energy." },
-  { name: "ZERO SUGAR", color: "#20A9FF", can: "zero-sugar.png", description: "Crisp energy without sugar.", ice: true },
-  { name: "ULTRA", color: "#F2F5F3", can: "ultra.png", description: "Clean. Cold. Ultra.", ice: true },
-  { name: "MANGO LOCO", color: "#FF7A18", can: "mango-loco.png", description: "Tropical mango intensity." },
-  { name: "PIPELINE PUNCH", color: "#FF4FA3", can: "pipeline-punch.png", description: "Fruit punch energy." }
+  { name: "ORIGINAL", color: "#A8FF00", can: "original.webp", description: "Bold flavor. Maximum energy." },
+  { name: "ZERO SUGAR", color: "#20A9FF", can: "zero-sugar.webp", description: "Crisp energy without sugar.", ice: true },
+  { name: "ULTRA", color: "#F2F5F3", can: "ultra.webp", description: "Clean. Cold. Ultra.", ice: true },
+  { name: "MANGO LOCO", color: "#FF7A18", can: "mango-loco.webp", description: "Tropical mango intensity." },
+  { name: "PIPELINE PUNCH", color: "#FF4FA3", can: "pipeline-punch.webp", description: "Fruit punch energy." }
 ];
 const CAN_DIR = "assets/cans/";
 
@@ -295,6 +295,6 @@ async function boot() {
   }
   await new Promise((r) => setTimeout(r, Math.max(0, 1100 - (performance.now() - t0))));
   loader.classList.add("done"); initUX(); if (webgl) intro();
-  if (missing) setTimeout(() => showToast(`USING PROCEDURAL CANS — ADD PNGs TO <b>${CAN_DIR}</b>`), 2200);
+  if (missing) setTimeout(() => showToast(`USING PROCEDURAL CANS — ADD CAN IMAGES TO <b>${CAN_DIR}</b>`), 2200);
 }
 boot().catch((e) => { console.error(e); loader.classList.add("done"); });
